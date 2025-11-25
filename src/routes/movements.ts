@@ -1,7 +1,7 @@
-// src/routes/movements.ts
 import { Router } from "express";
 import { getExtractConn } from "../db/extractData";
 import { OtherItemModel } from "../models/extract/OtherItem";
+import { OtherItemHistoryModel } from "../models/extract/OtherItemHistory";
 
 const router = Router();
 
@@ -11,49 +11,52 @@ function cleanPrizeName(raw: string) {
   return String(raw ?? "").replace(/^\(\d+\)\s*/, "").trim();
 }
 
-// ---------- Helpers de fechas ----------
+// Parse "dd/MM/yyyy HH:mm:ss"
+function parseArDateTime(raw: string): Date | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
 
-// Parsea "dd/MM/yyyy" -> Date (a las 00:00)
-function parseDdMmYyyy(str: string): Date | null {
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(str.trim());
-  if (!m) return null;
-  const day = Number(m[1]);
-  const month = Number(m[2]) - 1; // 0-11
-  const year = Number(m[3]);
-  const d = new Date(year, month, day, 0, 0, 0, 0);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+  const [datePart, timePart] = trimmed.split(" ");
+  if (!datePart) return null;
 
-// Parsea "dd/MM/yyyy HH:mm:ss" o ISO -> Date
-function parseMovementDate(raw: any): Date | null {
-  const s = String(raw ?? "").trim();
-  if (!s) return null;
+  const [dd, mm, yyyy] = datePart.split("/");
+  const day = Number.parseInt(dd, 10);
+  const month = Number.parseInt(mm, 10);
+  const year = Number.parseInt(yyyy, 10);
+  if (!day || !month || !year) return null;
 
-  // dd/MM/yyyy HH:mm:ss
-  const m =
-    /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/.exec(s);
-  if (m) {
-    const day = Number(m[1]);
-    const month = Number(m[2]) - 1;
-    const year = Number(m[3]);
-    const hh = Number(m[4]);
-    const mm = Number(m[5]);
-    const ss = Number(m[6]);
-    const d = new Date(year, month, day, hh, mm, ss, 0);
-    if (!Number.isNaN(d.getTime())) return d;
+  let h = 0, m = 0, s = 0;
+  if (timePart) {
+    const [hh, mm2, ss] = timePart.split(":");
+    h = Number.parseInt(hh ?? "0", 10) || 0;
+    m = Number.parseInt(mm2 ?? "0", 10) || 0;
+    s = Number.parseInt(ss ?? "0", 10) || 0;
   }
 
-  // fallback: ISO u otros formatos que entienda JS
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return new Date(year, month - 1, day, h, m, s);
 }
 
-// Fecha a hora Argentina para el "Actualizado: ..."
-function formatArgentinaDate(d: Date | string | null | undefined): string | null {
+// Parse "dd/MM/yyyy" que viene del móvil
+function parseFilterDate(raw: string): Date | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const [dd, mm, yyyy] = trimmed.split("/");
+  const day = Number.parseInt(dd, 10);
+  const month = Number.parseInt(mm, 10);
+  const year = Number.parseInt(yyyy, 10);
+  if (!day || !month || !year) return null;
+
+  return new Date(year, month - 1, day);
+}
+
+// Fecha a hora Argentina (para mostrar "Actualizado: ...")
+function formatArgentinaDate(
+  d: Date | string | null | undefined
+): string | null {
   if (!d) return null;
-  const date =
-    d instanceof Date ? d : parseMovementDate(d);
-  if (!date) return null;
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return null;
 
   return date.toLocaleString("es-AR", {
     timeZone: "America/Argentina/Buenos_Aires",
@@ -71,21 +74,25 @@ router.get("/", async (req, res) => {
   try {
     const conn = await getExtractConn();
     const OtherItem = OtherItemModel(conn);
+    const OtherItemHistory = OtherItemHistoryModel(conn);
 
-    // TODO: si querés incluir históricos, acá habría que
-    // leer también la colección otheritemhistories y unir ambos arrays.
+    // 👇 Unimos mes actual + históricos
+    const [docsCurrent, docsHistory] = await Promise.all([
+      OtherItem.find().lean().exec(),
+      OtherItemHistory.find().lean().exec(),
+    ]);
 
-    const docs = await OtherItem.find().lean().exec();
+    const docs: any[] = [...docsCurrent, ...docsHistory];
 
     // Última fecha de actualización (scrapedAt más reciente)
     let lastUpdated: string | null = null;
     if (docs.length > 0) {
       let latest: Date | null = null;
-      for (const d of docs as any[]) {
+      for (const d of docs) {
         const raw = d.scrapedAt;
         if (!raw) continue;
-        const dt = parseMovementDate(raw);
-        if (!dt) continue;
+        const dt = new Date(raw);
+        if (Number.isNaN(dt.getTime())) continue;
         if (!latest || dt > latest) latest = dt;
       }
       if (latest) lastUpdated = formatArgentinaDate(latest);
@@ -96,33 +103,31 @@ router.get("/", async (req, res) => {
     let from: Date | null = null;
     let to: Date | null = null;
 
+    // 👇 vienen como dd/MM/yyyy desde Flutter
     if (typeof startDate === "string" && startDate.trim()) {
-      // Esperamos "dd/MM/yyyy"
-      from = parseDdMmYyyy(startDate);
+      from = parseFilterDate(startDate);
     }
     if (typeof endDate === "string" && endDate.trim()) {
-      to = parseDdMmYyyy(endDate);
+      to = parseFilterDate(endDate);
       if (to) {
         // incluir todo el día final
         to.setHours(23, 59, 59, 999);
       }
     }
 
-    const filteredDocs = docs.filter((d: any) => {
+    const filteredDocs = docs.filter((d) => {
       if (!from && !to) return true;
 
-      const dDate = parseMovementDate(d.fecha);
-      if (!dDate) {
-        // si no podemos parsear fecha y hay filtro, lo excluimos
-        return false;
-      }
+      const rawFecha = String(d.fecha ?? "").trim();
+      const dDate = parseArDateTime(rawFecha);
+      if (!dDate) return false; // si no podemos parsear, lo excluimos cuando hay filtro
 
       if (from && dDate < from) return false;
       if (to && dDate > to) return false;
       return true;
     });
 
-    const rows = filteredDocs.map((d: any) => {
+    const rows = filteredDocs.map((d) => {
       const movementRaw = String(d.movimiento ?? "").trim();
       const isEgress = movementRaw.toLowerCase() === "egress";
       const type = isEgress ? "EGRESO" : "INGRESO";
@@ -134,19 +139,22 @@ router.get("/", async (req, res) => {
       const rewardRaw = String(d.recompensa ?? "").trim();
       const isCafeCombo = CAFE_CODES.test(rewardRaw);
 
+      const fechaRaw = String(d.fecha ?? "").trim();
+      const parsedDate = parseArDateTime(fechaRaw);
+
       return {
         id: String(d._id),
-        // la fecha se manda como viene de la BD (texto)
-        date: String(d.fecha ?? ""),
+        // 👇 enviamos ISO para que Flutter pueda parsear bien
+        date: parsedDate ? parsedDate.toISOString() : fechaRaw,
         prizeName: cleanPrizeName(rewardRaw),
         locationName,
-        type, // INGR/EGRESO para el front
+        type, // "INGRESO" | "EGRESO"
         quantity: Number(d.cantidad ?? 0) || 0,
         entity: String(d.entidad ?? "").trim(),
         rewardRaw,
         isCafeCombo,
         movement: movementRaw, // "Adjustment", "Egress", etc.
-        lastUpdated,           // misma fecha para todas las filas
+        lastUpdated, // misma para todas
       };
     });
 
