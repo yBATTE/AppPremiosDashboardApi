@@ -2,7 +2,8 @@
 import { Router, Response } from "express";
 import bcrypt from "bcryptjs";
 import { User, UserRole } from "../models/User";
-import { AuthRequest, requireAuth, requireAdmin } from "../middleware/auth"; // Importamos los middlewares
+import { AuthRequest, requireAuth, requireAdmin } from "../middleware/auth";
+import { sendNewUserEmail } from "../services/mail"; // 👈 nuevo import
 
 const router = Router();
 
@@ -50,6 +51,18 @@ router.post(
         passwordHash,
         role: finalRole,
       });
+
+      // 👇 Intentamos enviar el mail (pero no rompemos el alta si falla)
+      try {
+        await sendNewUserEmail({
+          to: user.email,
+          password, // la contraseña en claro que recibió el admin
+          role: user.role as UserRole,
+        });
+      } catch (mailErr) {
+        console.error("Error enviando email de nuevo usuario:", mailErr);
+        // Podrías agregar un campo "emailWarning" en la respuesta si querés
+      }
 
       return res.status(201).json({
         id: user._id,
