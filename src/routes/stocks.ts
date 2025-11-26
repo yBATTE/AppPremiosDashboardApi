@@ -1,6 +1,8 @@
+// src/routes/stocks.ts
 import { Router } from "express";
 import { getExtractConn } from "../db/extractData";
 import { AgrItemModel } from "../models/extract/AgrItem";
+import { requireAuth } from "../middleware/auth"; // Importamos el middleware de autenticación
 
 const router = Router();
 
@@ -32,66 +34,71 @@ const formatArgentinaDate = (
   });
 };
 
-router.get("/", async (_req, res) => {
-  try {
-    const conn = await getExtractConn();
-    const AgrItem = AgrItemModel(conn);
+// Ruta protegida /api/stocks
+router.get(
+  "/",
+  requireAuth, // Protegemos la ruta para que solo usuarios autenticados puedan acceder
+  async (_req, res) => {
+    try {
+      const conn = await getExtractConn();
+      const AgrItem = AgrItemModel(conn);
 
-    // Traemos todos los stocks
-    const rows = await AgrItem.find().lean().exec();
+      // Traemos todos los stocks
+      const rows = await AgrItem.find().lean().exec();
 
-    // Buscamos la última fecha de actualización en OTHERITEMS
-    const db = (conn as any).db;
-    let lastUpdated: string | null = null;
+      // Buscamos la última fecha de actualización en OTHERITEMS
+      const db = (conn as any).db;
+      let lastUpdated: string | null = null;
 
-    if (db) {
-      const docs = await db
-        .collection("otheritems")
-        .find({})
-        .sort({ scrapedAt: -1 }) // el más reciente primero
-        .limit(1)
-        .toArray();
+      if (db) {
+        const docs = await db
+          .collection("otheritems")
+          .find({})
+          .sort({ scrapedAt: -1 }) // el más reciente primero
+          .limit(1)
+          .toArray();
 
-      if (docs.length > 0 && docs[0].scrapedAt) {
-        lastUpdated = formatArgentinaDate(docs[0].scrapedAt);
+        if (docs.length > 0 && docs[0].scrapedAt) {
+          lastUpdated = formatArgentinaDate(docs[0].scrapedAt);
+        }
       }
+
+      const out: any[] = [];
+      for (const r of rows) {
+        const rawName = r.description ?? "—";
+        const normalizedName = rawName.trim().toUpperCase();
+
+        // Si el premio está en la lista de excluidos, lo salteamos
+        if (EXCLUDED_DESCRIPTIONS.has(normalizedName)) continue;
+
+        const name = rawName;
+
+        const pushRow = (locationName: string, qty: unknown) => {
+          const n = typeof qty === "number" ? qty : Number(qty ?? 0) || 0;
+          out.push({
+            _id: `${r._id}-${locationName}`,
+            prizeName: name,
+            locationName,
+            quantity: n,
+            minQuantity: 0,
+            lastUpdated, // 👈 misma fecha para todas las filas
+          });
+        };
+
+        pushRow("DEPOSITO GRUPO GEN", r.stock_grupogen);
+        pushRow("DEPOSITO MONTEVERDE", r.stock_monteverde);
+        pushRow("DEPOSITO BETTICA", r.stock_bettica);
+        pushRow("DEPOSITO TOBAGO 1", r.stock_tobago1);
+      }
+
+      res.json(out);
+    } catch (err: any) {
+      console.error("GET /api/stocks", err);
+      res
+        .status(500)
+        .json({ message: err?.message || "Error al obtener stock" });
     }
-
-    const out: any[] = [];
-    for (const r of rows) {
-      const rawName = r.description ?? "—";
-      const normalizedName = rawName.trim().toUpperCase();
-
-      // Si el premio está en la lista de excluidos, lo salteamos
-      if (EXCLUDED_DESCRIPTIONS.has(normalizedName)) continue;
-
-      const name = rawName;
-
-      const pushRow = (locationName: string, qty: unknown) => {
-        const n = typeof qty === "number" ? qty : Number(qty ?? 0) || 0;
-        out.push({
-          _id: `${r._id}-${locationName}`,
-          prizeName: name,
-          locationName,
-          quantity: n,
-          minQuantity: 0,
-          lastUpdated, // 👈 misma fecha para todas las filas
-        });
-      };
-
-      pushRow("DEPOSITO GRUPO GEN", r.stock_grupogen);
-      pushRow("DEPOSITO MONTEVERDE", r.stock_monteverde);
-      pushRow("DEPOSITO BETTICA", r.stock_bettica);
-      pushRow("DEPOSITO TOBAGO 1", r.stock_tobago1);
-    }
-
-    res.json(out);
-  } catch (err: any) {
-    console.error("GET /api/stocks", err);
-    res
-      .status(500)
-      .json({ message: err?.message || "Error al obtener stock" });
   }
-});
+);
 
 export default router;

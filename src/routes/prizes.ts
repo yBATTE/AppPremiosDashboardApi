@@ -1,6 +1,8 @@
+// src/routes/prizes.ts
 import { Router } from "express";
 import { getExtractConn } from "../db/extractData";
 import { AgrItemModel } from "../models/extract/AgrItem";
+import { requireAuth } from "../middleware/auth"; // Importamos el middleware de autenticación
 
 const router = Router();
 
@@ -42,34 +44,37 @@ const formatArgentinaDate = (d: Date | string | null | undefined): string => {
   });
 };
 
-router.get("/", async (_req, res) => {
-  try {
-    const conn = await getExtractConn();
-    const AgrItem = AgrItemModel(conn);
+// Ruta protegida para obtener premios
+router.get(
+  "/",
+  requireAuth, // Asegura que el usuario esté autenticado
+  async (_req, res) => {
+    try {
+      const conn = await getExtractConn();
+      const AgrItem = AgrItemModel(conn);
 
-    const rows = await AgrItem.find().lean().exec();
+      const rows = await AgrItem.find().lean().exec();
 
-    const out = rows.map((r) => ({
-      _id: String(r._id),
-      name: r.description ?? "—",
-      category: r.category ?? "",
-      // para el dashboard (costo unitario)
-      defaultPurchasePrice: toNum(r.cost),
-      // para la pantalla de Premios (mostrar puntos)
-      points: toNum(r.points),
-      // estado ya normalizado a booleano
-      active: parseActive(r.status),
-      // fecha formateada en hora Argentina
-      scrapedAt: formatArgentinaDate((r as any).scrapedAt),
-    }));
+      const out = rows.map((r) => ({
+        _id: String(r._id),
+        name: r.description ?? "—",
+        category: r.category ?? "",
+        // para el dashboard (costo unitario)
+        defaultPurchasePrice: toNum(r.cost),
+        // para la pantalla de Premios (mostrar puntos)
+        points: toNum(r.points),
+        // estado ya normalizado a booleano
+        active: parseActive(r.status),
+        // fecha formateada en hora Argentina
+        scrapedAt: formatArgentinaDate((r as any).scrapedAt),
+      }));
 
-    res.json(out);
-  } catch (err: any) {
-    console.error("GET /api/prizes", err);
-    res
-      .status(500)
-      .json({ message: err?.message || "Error al obtener premios" });
+      res.json(out);
+    } catch (err: any) {
+      console.error("GET /api/prizes", err);
+      res.status(500).json({ message: err?.message || "Error al obtener premios" });
+    }
   }
-});
+);
 
 export default router;

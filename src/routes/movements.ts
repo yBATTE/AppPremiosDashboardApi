@@ -1,7 +1,9 @@
-import { Router } from "express";
+// src/routes/cafes.ts
+import { Router, Response } from "express";
 import { getExtractConn } from "../db/extractData";
 import { OtherItemModel } from "../models/extract/OtherItem";
 import { OtherItemHistoryModel } from "../models/extract/OtherItemHistory";
+import { requireAuth } from "../middleware/auth"; // Importamos el middleware de autenticación
 
 const router = Router();
 
@@ -70,102 +72,106 @@ function formatArgentinaDate(
   });
 }
 
-router.get("/", async (req, res) => {
-  try {
-    const conn = await getExtractConn();
-    const OtherItem = OtherItemModel(conn);
-    const OtherItemHistory = OtherItemHistoryModel(conn);
+router.get(
+  "/",
+  requireAuth,  // Protegemos la ruta para que solo usuarios autenticados puedan acceder
+  async (req, res) => {
+    try {
+      const conn = await getExtractConn();
+      const OtherItem = OtherItemModel(conn);
+      const OtherItemHistory = OtherItemHistoryModel(conn);
 
-    // 👇 Unimos mes actual + históricos
-    const [docsCurrent, docsHistory] = await Promise.all([
-      OtherItem.find().lean().exec(),
-      OtherItemHistory.find().lean().exec(),
-    ]);
+      // 👇 Unimos mes actual + históricos
+      const [docsCurrent, docsHistory] = await Promise.all([
+        OtherItem.find().lean().exec(),
+        OtherItemHistory.find().lean().exec(),
+      ]);
 
-    const docs: any[] = [...docsCurrent, ...docsHistory];
+      const docs: any[] = [...docsCurrent, ...docsHistory];
 
-    // Última fecha de actualización (scrapedAt más reciente)
-    let lastUpdated: string | null = null;
-    if (docs.length > 0) {
-      let latest: Date | null = null;
-      for (const d of docs) {
-        const raw = d.scrapedAt;
-        if (!raw) continue;
-        const dt = new Date(raw);
-        if (Number.isNaN(dt.getTime())) continue;
-        if (!latest || dt > latest) latest = dt;
+      // Última fecha de actualización (scrapedAt más reciente)
+      let lastUpdated: string | null = null;
+      if (docs.length > 0) {
+        let latest: Date | null = null;
+        for (const d of docs) {
+          const raw = d.scrapedAt;
+          if (!raw) continue;
+          const dt = new Date(raw);
+          if (Number.isNaN(dt.getTime())) continue;
+          if (!latest || dt > latest) latest = dt;
+        }
+        if (latest) lastUpdated = formatArgentinaDate(latest);
       }
-      if (latest) lastUpdated = formatArgentinaDate(latest);
-    }
 
-    const { startDate, endDate } = req.query;
+      const { startDate, endDate } = req.query;
 
-    let from: Date | null = null;
-    let to: Date | null = null;
+      let from: Date | null = null;
+      let to: Date | null = null;
 
-    // 👇 vienen como dd/MM/yyyy desde Flutter
-    if (typeof startDate === "string" && startDate.trim()) {
-      from = parseFilterDate(startDate);
-    }
-    if (typeof endDate === "string" && endDate.trim()) {
-      to = parseFilterDate(endDate);
-      if (to) {
-        // incluir todo el día final
-        to.setHours(23, 59, 59, 999);
+      // 👇 vienen como dd/MM/yyyy desde Flutter
+      if (typeof startDate === "string" && startDate.trim()) {
+        from = parseFilterDate(startDate);
       }
+      if (typeof endDate === "string" && endDate.trim()) {
+        to = parseFilterDate(endDate);
+        if (to) {
+          // incluir todo el día final
+          to.setHours(23, 59, 59, 999);
+        }
+      }
+
+      const filteredDocs = docs.filter((d) => {
+        if (!from && !to) return true;
+
+        const rawFecha = String(d.fecha ?? "").trim();
+        const dDate = parseArDateTime(rawFecha);
+        if (!dDate) return false; // si no podemos parsear, lo excluimos cuando hay filtro
+
+        if (from && dDate < from) return false;
+        if (to && dDate > to) return false;
+        return true;
+      });
+
+      const rows = filteredDocs.map((d) => {
+        const movementRaw = String(d.movimiento ?? "").trim();
+        const isEgress = movementRaw.toLowerCase() === "egress";
+        const type = isEgress ? "EGRESO" : "INGRESO";
+
+        const locationName = isEgress
+          ? String(d.depositoOrigen || d.depositoDestino || "").trim()
+          : String(d.depositoDestino || d.depositoOrigen || "").trim();
+
+        const rewardRaw = String(d.recompensa ?? "").trim();
+        const isCafeCombo = CAFE_CODES.test(rewardRaw);
+
+        const fechaRaw = String(d.fecha ?? "").trim();
+        const parsedDate = parseArDateTime(fechaRaw);
+
+        return {
+          id: String(d._id),
+          // 👇 enviamos ISO para que Flutter pueda parsear bien
+          date: parsedDate ? parsedDate.toISOString() : fechaRaw,
+          prizeName: cleanPrizeName(rewardRaw),
+          locationName,
+          type, // "INGRESO" | "EGRESO"
+          quantity: Number(d.cantidad ?? 0) || 0,
+          entity: String(d.entidad ?? "").trim(),
+          rewardRaw,
+          isCafeCombo,
+          movement: movementRaw, // "Adjustment", "Egress", etc.
+          lastUpdated, // misma para todas
+        };
+      });
+
+      res.json(rows);
+    } catch (err: any) {
+      console.error("GET /api/cafes", err);
+      res.status(500).json({
+        message: "Error al obtener cafés",
+        error: err?.message || String(err),
+      });
     }
-
-    const filteredDocs = docs.filter((d) => {
-      if (!from && !to) return true;
-
-      const rawFecha = String(d.fecha ?? "").trim();
-      const dDate = parseArDateTime(rawFecha);
-      if (!dDate) return false; // si no podemos parsear, lo excluimos cuando hay filtro
-
-      if (from && dDate < from) return false;
-      if (to && dDate > to) return false;
-      return true;
-    });
-
-    const rows = filteredDocs.map((d) => {
-      const movementRaw = String(d.movimiento ?? "").trim();
-      const isEgress = movementRaw.toLowerCase() === "egress";
-      const type = isEgress ? "EGRESO" : "INGRESO";
-
-      const locationName = isEgress
-        ? String(d.depositoOrigen || d.depositoDestino || "").trim()
-        : String(d.depositoDestino || d.depositoOrigen || "").trim();
-
-      const rewardRaw = String(d.recompensa ?? "").trim();
-      const isCafeCombo = CAFE_CODES.test(rewardRaw);
-
-      const fechaRaw = String(d.fecha ?? "").trim();
-      const parsedDate = parseArDateTime(fechaRaw);
-
-      return {
-        id: String(d._id),
-        // 👇 enviamos ISO para que Flutter pueda parsear bien
-        date: parsedDate ? parsedDate.toISOString() : fechaRaw,
-        prizeName: cleanPrizeName(rewardRaw),
-        locationName,
-        type, // "INGRESO" | "EGRESO"
-        quantity: Number(d.cantidad ?? 0) || 0,
-        entity: String(d.entidad ?? "").trim(),
-        rewardRaw,
-        isCafeCombo,
-        movement: movementRaw, // "Adjustment", "Egress", etc.
-        lastUpdated, // misma para todas
-      };
-    });
-
-    res.json(rows);
-  } catch (err: any) {
-    console.error("GET /api/movements", err);
-    res.status(500).json({
-      message: "Error al obtener movimientos",
-      error: err?.message || String(err),
-    });
   }
-});
+);
 
 export default router;
