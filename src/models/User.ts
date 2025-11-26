@@ -1,13 +1,15 @@
-import { Schema, model, Document } from "mongoose"
+import { Schema, model, Document } from "mongoose";
 
-export type UserRole = "ADMIN" | "OPERADOR" | "VIEWER"
+export type UserRole = "ADMIN" | "OPERADOR" | "VIEWER";
 
 export interface IUser extends Document {
-  email: string
-  passwordHash: string
-  role: UserRole
-  createdAt: Date
-  updatedAt: Date
+  email: string;
+  passwordHash: string;
+  role: UserRole;
+  createdAt: Date;
+  updatedAt: Date;
+  resetCode?: string | null;  // Permitir null
+  resetCodeExpiration?: Date | null;  // Permitir null
 }
 
 const userSchema = new Schema<IUser>(
@@ -18,10 +20,12 @@ const userSchema = new Schema<IUser>(
       type: String,
       enum: ["ADMIN", "OPERADOR", "VIEWER"],
       default: "VIEWER",
-      required: true
-    }
+      required: true,
+    },
+    resetCode: { type: String, default: null },  // Permitir null
+    resetCodeExpiration: { type: Date, default: null },  // Permitir null
   },
   { timestamps: true }
-)
+);
 
-export const User = model<IUser>("User", userSchema)
+export const User = model<IUser>("User", userSchema);

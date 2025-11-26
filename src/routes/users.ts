@@ -3,9 +3,11 @@ import { Router, Response } from "express";
 import bcrypt from "bcryptjs";
 import { User, UserRole } from "../models/User";
 import { AuthRequest, requireAuth, requireAdmin } from "../middleware/auth";
-import { sendNewUserEmail } from "../services/mail";
+import { sendNewUserEmail, sendPasswordResetCodeEmail, sendPasswordResetSuccessEmail } from "../services/mail";
+import * as crypto from 'crypto'; // Asegúrate de importar crypto correctamente
 
 const router = Router();
+
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -154,5 +156,140 @@ router.get(
     }
   }
 );
+
+// POST /api/users/forgot-password -> olvidé mi contraseña
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body as { email: string };
+
+    if (!email) {
+      return res.status(400).json({ message: "Email requerido" });
+    }
+
+    const normEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normEmail }).exec();
+
+    // Si no existe el usuario, simplemente respondemos 200
+    // Para evitar enumerar si el usuario existe o no
+    if (!user) {
+      return res.json({
+        message: "Si el email existe en nuestros registros, te enviamos un código.",
+      });
+    }
+
+    // Generar código de 6 dígitos
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+    user.resetCode = code;  // Asignamos el código de reset
+    user.resetCodeExpiration = new Date(Date.now() + 15 * 60 * 1000);  // 15 minutos de validez
+    await user.save();
+
+    // Enviar el código por email
+    try {
+      await sendPasswordResetCodeEmail({ to: user.email, code });
+    } catch (mailErr) {
+      console.error("Error enviando email de recuperación:", mailErr);
+    }
+
+    return res.json({
+      message: "Código de recuperación enviado. Revisá tu correo.",
+    });
+  } catch (err) {
+    console.error("Error en /forgot-password", err);
+    return res.status(500).json({ message: "Error al procesar la solicitud." });
+  }
+});
+
+
+// POST /api/users/forgot-password -> olvidé mi contraseña
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body as { email: string };
+
+    if (!email) {
+      return res.status(400).json({ message: "Email requerido" });
+    }
+
+    const normEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normEmail }).exec();
+
+    // Si no existe el usuario, simplemente respondemos 200
+    // Para evitar enumerar si el usuario existe o no
+    if (!user) {
+      return res.json({
+        message: "Si el email existe en nuestros registros, te enviamos un código.",
+      });
+    }
+
+    // Generar código de 6 dígitos
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+    user.resetCode = code;
+    user.resetCodeExpiration = new Date(Date.now() + 15 * 60 * 1000);  // 15 minutos de validez
+    await user.save();
+
+    // Enviar el código por email
+    try {
+      await sendPasswordResetCodeEmail({ to: user.email, code });
+    } catch (mailErr) {
+      console.error("Error enviando email de recuperación:", mailErr);
+    }
+
+    return res.json({
+      message: "Código de recuperación enviado. Revisá tu correo.",
+    });
+  } catch (err) {
+    console.error("Error en /forgot-password", err);
+    return res.status(500).json({ message: "Error al procesar la solicitud." });
+  }
+});
+
+// POST /api/users/reset-password -> restablecer contraseña
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body as { email: string; code: string; newPassword: string };
+
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ message: "Faltan datos para resetear la contraseña" });
+    }
+
+    // Validar que la nueva contraseña tenga al menos 4 caracteres
+    if (newPassword.length < 4) {
+      return res.status(400).json({ message: "La nueva contraseña es demasiado corta" });
+    }
+
+    const normEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normEmail }).exec();
+
+    if (!user || !user.resetCode || !user.resetCodeExpiration) {
+      return res.status(400).json({ message: "Código inválido o no solicitado" });
+    }
+
+    // Verificar que el código no haya vencido
+    const now = new Date();
+    if (user.resetCode !== code || user.resetCodeExpiration < now) {
+      return res.status(400).json({ message: "Código inválido o vencido" });
+    }
+
+    // Actualizar la contraseña
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    user.passwordHash = passwordHash;
+    user.resetCode = null;  // Limpiar el código de recuperación
+    user.resetCodeExpiration = null;  // Limpiar la fecha de expiración
+    await user.save();
+
+    // Enviar el email notificando el cambio de contraseña
+    try {
+      await sendPasswordResetSuccessEmail({ to: user.email });
+    } catch (mailErr) {
+      console.error("Error enviando email de cambio de contraseña:", mailErr);
+    }
+
+    return res.json({ message: "Contraseña actualizada correctamente" });
+  } catch (err) {
+    console.error("Error en /reset-password", err);
+    return res.status(500).json({ message: "Error al restablecer la contraseña" });
+  }
+});
 
 export default router;

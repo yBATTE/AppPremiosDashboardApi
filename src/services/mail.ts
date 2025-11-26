@@ -65,3 +65,55 @@ Equipo ${appName}
     text,
   });
 }
+
+// --- mail para notificar cambio de contraseña ---
+export async function sendPasswordResetSuccessEmail(options: { to: string }) {
+  const { to } = options;
+
+  const subject = `${appName} - Tu contraseña fue cambiada correctamente`;
+  const text = `
+Hola,
+
+Tu contraseña de ${appName} fue actualizada correctamente.
+
+Si no fuiste tú quien cambió la contraseña, por favor contáctanos inmediatamente.
+
+Saludos,
+Equipo ${appName}
+`.trim();
+
+  await transporter.sendMail({
+    from: smtpFrom,
+    to,
+    subject,
+    text,
+  });
+}
+
+// --- mail para enviar código de recuperación de contraseña ---
+export async function sendPasswordResetCodeEmail(options: { to: string; code: string }) {
+  const { to, code } = options;
+
+  const subject = `${appName} - Código de restablecimiento de contraseña`;
+  const text = `
+    Hola,
+
+    Recibiste este correo porque solicitaste un restablecimiento de contraseña.
+
+    Tu código de restablecimiento es: ${code}
+
+    Ingresalo en la aplicación para restablecer tu contraseña.
+
+    Si no solicitaste este cambio, ignora este mensaje.
+
+    Saludos,
+    Equipo ${appName}
+  `.trim();
+
+  await transporter.sendMail({
+    from: smtpFrom,
+    to,
+    subject,
+    text,
+  });
+}
