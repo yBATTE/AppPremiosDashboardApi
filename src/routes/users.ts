@@ -3,7 +3,7 @@ import { Router, Response } from "express";
 import bcrypt from "bcryptjs";
 import { User, UserRole } from "../models/User";
 import { AuthRequest, requireAuth, requireAdmin } from "../middleware/auth";
-import { sendNewUserEmail } from "../services/mail"; // 👈 nuevo import
+import { sendNewUserEmail } from "../services/mail";
 
 const router = Router();
 
@@ -37,6 +37,7 @@ router.post(
         ? (role as UserRole)
         : "VIEWER";
 
+      // 👉 Verificar que no exista otro usuario con ese email
       const existing = await User.findOne({ email: normEmail }).exec();
       if (existing) {
         return res
@@ -52,16 +53,15 @@ router.post(
         role: finalRole,
       });
 
-      // 👇 Intentamos enviar el mail (pero no rompemos el alta si falla)
+      // Intentar enviar mail (no rompe el alta si falla)
       try {
         await sendNewUserEmail({
           to: user.email,
-          password, // la contraseña en claro que recibió el admin
+          password,
           role: user.role as UserRole,
         });
       } catch (mailErr) {
         console.error("Error enviando email de nuevo usuario:", mailErr);
-        // Podrías agregar un campo "emailWarning" en la respuesta si querés
       }
 
       return res.status(201).json({
@@ -75,6 +75,59 @@ router.post(
       return res.status(500).json({
         message: "Error al crear el usuario, revisá el servidor",
       });
+    }
+  }
+);
+
+// POST /api/users/change-password -> cambiar contraseña propia (cualquier rol)
+router.post(
+  "/change-password",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { currentPassword, newPassword } = req.body as {
+        currentPassword?: string;
+        newPassword?: string;
+      };
+
+      if (!currentPassword || !newPassword) {
+        return res
+          .status(400)
+          .json({ message: "Contraseña actual y nueva son obligatorias" });
+      }
+
+      if (newPassword.length < 4) {
+        return res
+          .status(400)
+          .json({ message: "La nueva contraseña es demasiado corta" });
+      }
+
+      const userId = req.user?.id; // 👈 viene del middleware requireAuth
+      if (!userId) {
+        return res.status(401).json({ message: "No autorizado" });
+      }
+
+      const user = await User.findById(userId).exec();
+      if (!user) {
+        return res.status(401).json({ message: "No autorizado" });
+      }
+
+      const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!isValid) {
+        return res
+          .status(400)
+          .json({ message: "La contraseña actual no es correcta" });
+      }
+
+      user.passwordHash = await bcrypt.hash(newPassword, 10);
+      await user.save();
+
+      return res.json({ message: "Contraseña actualizada correctamente" });
+    } catch (err) {
+      console.error("Error en POST /api/users/change-password:", err);
+      return res
+        .status(500)
+        .json({ message: "Error al cambiar la contraseña" });
     }
   }
 );
