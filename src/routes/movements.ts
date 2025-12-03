@@ -1,5 +1,5 @@
 // src/routes/cafes.ts
-import { Router, Response } from "express";
+import { Router } from "express";
 import { getExtractConn } from "../db/extractData";
 import { OtherItemModel } from "../models/extract/OtherItem";
 import { OtherItemHistoryModel } from "../models/extract/OtherItemHistory";
@@ -27,7 +27,9 @@ function parseArDateTime(raw: string): Date | null {
   const year = Number.parseInt(yyyy, 10);
   if (!day || !month || !year) return null;
 
-  let h = 0, m = 0, s = 0;
+  let h = 0,
+    m = 0,
+    s = 0;
   if (timePart) {
     const [hh, mm2, ss] = timePart.split(":");
     h = Number.parseInt(hh ?? "0", 10) || 0;
@@ -72,9 +74,17 @@ function formatArgentinaDate(
   });
 }
 
+// Detecta si el movimiento es un egreso según el texto bruto
+function isEgresoMovement(movementRaw: string): boolean {
+  const value = String(movementRaw ?? "").trim().toUpperCase();
+  if (!value) return false;
+  // Cubre: Egreso, Egress, Salida, Out, Exit, etc.
+  return /(EGRES|EGRESS|SALID|OUT|EXIT)/.test(value);
+}
+
 router.get(
   "/",
-  requireAuth,  // Protegemos la ruta para que solo usuarios autenticados puedan acceder
+  requireAuth, // Protegemos la ruta para que solo usuarios autenticados puedan acceder
   async (req, res) => {
     try {
       const conn = await getExtractConn();
@@ -134,8 +144,7 @@ router.get(
 
       const rows = filteredDocs.map((d) => {
         const movementRaw = String(d.movimiento ?? "").trim();
-        const isEgress = movementRaw.toLowerCase() === "egress";
-        const type = isEgress ? "EGRESO" : "INGRESO";
+        const isEgress = isEgresoMovement(movementRaw);
 
         const locationName = isEgress
           ? String(d.depositoOrigen || d.depositoDestino || "").trim()
@@ -153,12 +162,12 @@ router.get(
           date: parsedDate ? parsedDate.toISOString() : fechaRaw,
           prizeName: cleanPrizeName(rewardRaw),
           locationName,
-          type, // "INGRESO" | "EGRESO"
+          // ⛔ NO devolvemos más `type`, para que no confunda
           quantity: Number(d.cantidad ?? 0) || 0,
           entity: String(d.entidad ?? "").trim(),
           rewardRaw,
           isCafeCombo,
-          movement: movementRaw, // "Adjustment", "Egress", etc.
+          movement: movementRaw, // "Adjustment", "Egress", "Egreso", etc.
           lastUpdated, // misma para todas
         };
       });
