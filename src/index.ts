@@ -21,6 +21,15 @@ async function main() {
   app.use(cors());
   app.use(express.json());
 
+  // 🔹 Healthcheck simple
+  app.get("/api/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      message: "Premios API funcionando",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // Rutas de la API
   app.use("/api/prizes", prizesRouter);
   app.use("/api/stocks", stocksRouter);
