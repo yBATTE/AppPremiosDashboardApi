@@ -9,7 +9,8 @@
     "build": "tsc",
     "import:stock": "ts-node-dev --transpile-only src/import-stock-from-excel.ts",
     "import:points": "ts-node-dev --transpile-only src/import-points-from-excel.ts",
-    "import:movements": "ts-node-dev --transpile-only src/import-movements-from-excel.ts"
+    "import:movements": "ts-node-dev --transpile-only src/import-movements-from-excel.ts",
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
