@@ -17,8 +17,9 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
+    "firebase-admin": "^13.6.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.6.0",
+    "mongoose": "^8.20.3",
     "nodemailer": "^7.0.11",
     "xlsx": "^0.18.5"
   },

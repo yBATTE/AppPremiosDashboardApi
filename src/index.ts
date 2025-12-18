@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { connectPrimary } from "./db/primary";
+import { getExtractConn } from "./db/extractData";
 
 // rutas
 import prizesRouter from "./routes/prizes";
@@ -12,14 +13,22 @@ import movementsRouter from "./routes/movements";
 import cafesRouter from "./routes/cafes";
 import authRouter from "./routes/auth";
 import usersRouter from "./routes/users";
+import cronRoutes from "./routes/cron.routes";
 
 async function main() {
-  // Conectamos a la DB principal (users, etc.)
-  await connectPrimary();
+  // ✅ Conexión primaria (users + notification_state)
+  const primaryConn = await connectPrimary();
+
+  // ✅ Conexión extract (donde están los movimientos reales)
+  const extractConn = await getExtractConn();
 
   const app = express();
   app.use(cors());
   app.use(express.json());
+
+  // ✅ disponibles para rutas/services
+  app.locals.mongoPrimary = primaryConn;
+  app.locals.mongoExtract = extractConn;
 
   // 🔹 Healthcheck simple
   app.get("/api/health", (_req, res) => {
@@ -41,6 +50,9 @@ async function main() {
 
   // Users (crear / listar usuarios)
   app.use("/api/users", usersRouter);
+
+  // ✅ Cron notifier
+  app.use("/cron", cronRoutes);
 
   const port = Number(process.env.PORT || 3000);
   app.listen(port, () => {
