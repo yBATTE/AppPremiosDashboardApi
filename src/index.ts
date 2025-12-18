@@ -52,7 +52,7 @@ async function main() {
   app.use("/api/users", usersRouter);
 
   // ✅ Cron notifier
-  app.use("/cron", cronRoutes);
+  app.use("/api/cron", cronRoutes);
 
   const port = Number(process.env.PORT || 3000);
   app.listen(port, () => {
