@@ -13,7 +13,7 @@ import movementsRouter from "./routes/movements";
 import cafesRouter from "./routes/cafes";
 import authRouter from "./routes/auth";
 import usersRouter from "./routes/users";
-import cronRoutes from "./routes/cron.routes";
+import cronRoutes from "./routes/cron";
 
 async function main() {
   // ✅ Conexión primaria (users + notification_state)
