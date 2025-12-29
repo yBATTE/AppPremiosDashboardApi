@@ -51,8 +51,8 @@ async function main() {
   // Users (crear / listar usuarios)
   app.use("/api/users", usersRouter);
 
-  // ✅ Cron notifier
-  app.use("/api/cron", cronRoutes);
+  // // ✅ Cron notifier
+  // app.use("/api/cron", cronRoutes);
 
   const port = Number(process.env.PORT || 3000);
   app.listen(port, () => {
