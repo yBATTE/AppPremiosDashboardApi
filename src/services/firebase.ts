@@ -1,4 +1,5 @@
 import admin from 'firebase-admin';
+import 'firebase-admin/firestore';
 
 export function getFirebaseAdmin() {
   if (admin.apps.length) return admin;
