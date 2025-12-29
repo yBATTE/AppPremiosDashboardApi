@@ -82,6 +82,24 @@ function isEgresoMovement(movementRaw: string): boolean {
   return /(EGRES|EGRESS|SALID|OUT|EXIT)/.test(value);
 }
 
+// ✅ Detecta si el movimiento es un ingreso (incluye "Ingress" mal escrito)
+function isIngresoMovement(movementRaw: string): boolean {
+  const value = String(movementRaw ?? "").trim().toUpperCase();
+  if (!value) return false;
+  // Cubre: Ingreso, Ingress (mal escrito), Entrada, Inbound, Receipt, etc.
+  return /(INGRES|INGRESS|ENTRAD|INBOUND|RECEIPT)/.test(value);
+}
+
+// ✅ Normaliza el texto del movimiento para que Flutter no lo interprete mal
+function normalizeMovementLabel(movementRaw: string): string {
+  const raw = String(movementRaw ?? "").trim();
+  if (!raw) return "";
+
+  if (isIngresoMovement(raw)) return "Ingreso";
+  if (isEgresoMovement(raw)) return "Egreso";
+  return raw; // Adjustment, etc.
+}
+
 router.get(
   "/",
   requireAuth, // Protegemos la ruta para que solo usuarios autenticados puedan acceder
@@ -144,7 +162,10 @@ router.get(
 
       const rows = filteredDocs.map((d) => {
         const movementRaw = String(d.movimiento ?? "").trim();
-        const isEgress = isEgresoMovement(movementRaw);
+
+        // ✅ Primero detectamos ingreso (incluye "Ingress"), y recién después egreso
+        const isIngress = isIngresoMovement(movementRaw);
+        const isEgress = !isIngress && isEgresoMovement(movementRaw);
 
         const locationName = isEgress
           ? String(d.depositoOrigen || d.depositoDestino || "").trim()
@@ -155,6 +176,8 @@ router.get(
 
         const fechaRaw = String(d.fecha ?? "").trim();
         const parsedDate = parseArDateTime(fechaRaw);
+
+        const movementLabel = normalizeMovementLabel(movementRaw);
 
         return {
           id: String(d._id),
@@ -167,7 +190,7 @@ router.get(
           entity: String(d.entidad ?? "").trim(),
           rewardRaw,
           isCafeCombo,
-          movement: movementRaw, // "Adjustment", "Egress", "Egreso", etc.
+          movement: movementLabel, // ahora "Ingress" -> "Ingreso", "Egress" -> "Egreso"
           lastUpdated, // misma para todas
         };
       });
