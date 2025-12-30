@@ -76,5 +76,142 @@ router.get(
     }
   }
 );
+// GET /api/prizes/inventory/valuation
+router.get(
+  "/inventory/valuation",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const conn = await getExtractConn();
+      const AgrItem = AgrItemModel(conn);
+
+      // Si querés, podés elegir cómo calcular qty:
+      // - by=global   -> usa stock_global (si existe) sino suma depósitos
+      // - by=deposits -> suma depósitos siempre
+      const by = String(req.query.by ?? "global"); // "global" | "deposits"
+      const includeZero = String(req.query.includeZero ?? "1") === "1"; // 1/0
+
+      const rows = await AgrItem.find().lean().exec();
+
+      const items = rows.map((r: any) => {
+        const unitCost = toNum(r.cost);
+        const unitPrice = toNum(r.price);
+
+        const stock_bettica = toNum(r.stock_bettica);
+        const stock_grupogen = toNum(r.stock_grupogen);
+        const stock_monteverde = toNum(r.stock_monteverde);
+        const stock_tobago1 = toNum(r.stock_tobago1);
+
+        const depositsQty =
+          stock_bettica + stock_grupogen + stock_monteverde + stock_tobago1;
+
+        const stock_global =
+          r.stock_global === null || r.stock_global === undefined
+            ? null
+            : toNum(r.stock_global);
+
+        // qty final
+        const qty =
+          by === "deposits"
+            ? depositsQty
+            : stock_global !== null
+              ? stock_global
+              : depositsQty;
+
+        const totalCostValue = qty * unitCost;
+        const totalSaleValue = qty * unitPrice;
+
+        return {
+          _id: String(r._id),
+          name: r.description ?? "—",
+          category: r.category ?? "",
+          active: parseActive(r.status),
+
+          qty,
+          unitCost,
+          unitPrice,
+          totalCostValue,
+          totalSaleValue,
+
+          stocks: {
+            stock_global: stock_global ?? undefined,
+            stock_bettica,
+            stock_grupogen,
+            stock_monteverde,
+            stock_tobago1,
+          },
+
+          scrapedAt: formatArgentinaDate(r.scrapedAt),
+        };
+      });
+
+      const filtered = includeZero ? items : items.filter((i) => i.qty > 0);
+
+      // Totales generales
+      const totals = filtered.reduce(
+        (acc, i) => {
+          acc.products += 1;
+          acc.totalQty += i.qty;
+          acc.totalInventoryCost += i.totalCostValue;
+          acc.totalInventorySale += i.totalSaleValue;
+          return acc;
+        },
+        {
+          products: 0,
+          totalQty: 0,
+          totalInventoryCost: 0,
+          totalInventorySale: 0,
+        }
+      );
+
+      // Totales por depósito (a costo)
+      const byLocationCost = filtered.reduce(
+        (acc, i) => {
+          const c = i.unitCost;
+          acc.BETTICA += (i.stocks.stock_bettica ?? 0) * c;
+          acc.GRUPO_GEN += (i.stocks.stock_grupogen ?? 0) * c;
+          acc.MONTEVERDE += (i.stocks.stock_monteverde ?? 0) * c;
+          acc.TOBAGO_1 += (i.stocks.stock_tobago1 ?? 0) * c;
+          return acc;
+        },
+        { BETTICA: 0, GRUPO_GEN: 0, MONTEVERDE: 0, TOBAGO_1: 0 }
+      );
+
+      // Totales por depósito (a precio de venta)
+      const byLocationSale = filtered.reduce(
+        (acc, i) => {
+          const p = i.unitPrice;
+          acc.BETTICA += (i.stocks.stock_bettica ?? 0) * p;
+          acc.GRUPO_GEN += (i.stocks.stock_grupogen ?? 0) * p;
+          acc.MONTEVERDE += (i.stocks.stock_monteverde ?? 0) * p;
+          acc.TOBAGO_1 += (i.stocks.stock_tobago1 ?? 0) * p;
+          return acc;
+        },
+        { BETTICA: 0, GRUPO_GEN: 0, MONTEVERDE: 0, TOBAGO_1: 0 }
+      );
+
+      // Ordenados por valor a costo (más caro arriba)
+      filtered.sort((a, b) => b.totalCostValue - a.totalCostValue);
+
+      res.json({
+        by, // "global" o "deposits"
+        includeZero,
+
+        totals, // { products, totalQty, totalInventoryCost, totalInventorySale }
+
+        byLocationCost,
+        byLocationSale,
+
+        items: filtered,
+      });
+    } catch (err: any) {
+      console.error("GET /api/prizes/inventory/valuation", err);
+      res
+        .status(500)
+        .json({ message: err?.message || "Error al calcular valuación" });
+    }
+  }
+);
+
 
 export default router;
