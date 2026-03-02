@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/services/premios.service.ts
 import axios, { AxiosInstance } from "axios";
 import { CookieJar } from "tough-cookie";
@@ -228,7 +229,8 @@ export class PremiosService {
     const action = form.attr("action") || "/Account/SignIn";
 
     const fields: Record<string, string> = {};
-    form.find("input").each((_, el) => {
+    // ✅ TIPADO: evita TS7006
+    form.find("input").each((_i: number, el: any) => {
       const key = $(el).attr("name") || $(el).attr("id");
       if (!key) return;
       fields[key] = $(el).attr("value") || "";
@@ -346,7 +348,8 @@ export class PremiosService {
 
     if (!table.length) return { rows, totalItems: null as number | null };
 
-    table.find("tbody tr").each((_, tr) => {
+    // ✅ TIPADO: evita TS7006
+    table.find("tbody tr").each((_i: number, tr: any) => {
       const tds = $(tr).find("td");
       if (tds.length < 8) return;
 
@@ -441,18 +444,22 @@ export class PremiosService {
     const $ = cheerio.load(html);
 
     let table: any = null;
-    $("table").each((_, t) => {
+
+    // ✅ TIPADO: evita TS7006
+    $("table").each((_i: number, t: any) => {
       const head = $(t).find("thead").text();
       if (norm(head).includes("PUNTO")) {
         table = $(t);
         return false;
       }
     });
+
     if (!table || !table.length) table = $("table").first();
     if (!table.length) return { byName: {} as Record<string, number>, byCode: {} as Record<string, number>, totalItems: null as number | null };
 
     const headers: string[] = [];
-    table.find("thead th").each((_: any, th: any) => headers.push(norm($(th).text())));
+    // ✅ TIPADO: evita TS7006
+    table.find("thead th").each((_i: number, th: any) => headers.push(norm($(th).text())));
 
     const idxPoints = headers.findIndex((h) => h.includes("PUNTO"));
     let idxName = headers.findIndex((h) => h.includes("NOMBRE") || h.includes("ITEM") || h.includes("RECOMPENSA") || h.includes("DESCRIP"));
@@ -461,7 +468,8 @@ export class PremiosService {
     const byName: Record<string, number> = {};
     const byCode: Record<string, number> = {};
 
-    table.find("tbody tr").each((_: any, tr: any) => {
+    // ✅ TIPADO: evita TS7006
+    table.find("tbody tr").each((_i: number, tr: any) => {
       const tds = $(tr).find("td");
       if (!tds.length) return;
 
@@ -652,10 +660,7 @@ export class PremiosService {
     for (let m = 1; m <= maxMonth; m++) {
       const monthKey = MONTHS[m - 1];
 
-      const isClosed =
-        year < currentYear ? true :
-        year === currentYear ? m < currentMonth :
-        false;
+      const isClosed = year < currentYear ? true : year === currentYear ? m < currentMonth : false;
 
       // ✅ si está cerrado y cacheado completo, reutiliza (solo si useCacheSkipClosedMonths=true)
       if (opts.useCacheSkipClosedMonths && isClosed && cached?.months && cached?.monthsPoints && cached?.monthsMoney) {
