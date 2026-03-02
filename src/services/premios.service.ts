@@ -452,7 +452,7 @@ export class PremiosService {
     if (!table.length) return { byName: {} as Record<string, number>, byCode: {} as Record<string, number>, totalItems: null as number | null };
 
     const headers: string[] = [];
-    table.find("thead th").each((_, th) => headers.push(norm($(th).text())));
+    table.find("thead th").each((_: any, th: any) => headers.push(norm($(th).text())));
 
     const idxPoints = headers.findIndex((h) => h.includes("PUNTO"));
     let idxName = headers.findIndex((h) => h.includes("NOMBRE") || h.includes("ITEM") || h.includes("RECOMPENSA") || h.includes("DESCRIP"));
@@ -461,7 +461,7 @@ export class PremiosService {
     const byName: Record<string, number> = {};
     const byCode: Record<string, number> = {};
 
-    table.find("tbody tr").each((_, tr) => {
+    table.find("tbody tr").each((_: any, tr: any) => {
       const tds = $(tr).find("td");
       if (!tds.length) return;
 
