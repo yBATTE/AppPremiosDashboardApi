@@ -13,6 +13,10 @@ import movementsRouter from "./routes/movements";
 import cafesRouter from "./routes/cafes";
 import authRouter from "./routes/auth";
 import usersRouter from "./routes/users";
+import fuelRouter from "./routes/fuel";
+
+// ✅ NUEVO
+import premiosRouter from "./routes/premios";
 
 async function main() {
   // ✅ Conexión primaria (users + notification_state)
@@ -22,7 +26,7 @@ async function main() {
   const extractConn = await getExtractConn();
 
   const app = express();
-  app.use(cors());
+  app.use(cors({ origin: true, credentials: true }));
   app.use(express.json());
 
   // ✅ disponibles para rutas/services
@@ -50,12 +54,16 @@ async function main() {
   // Users (crear / listar usuarios)
   app.use("/api/users", usersRouter);
 
-  // // ✅ Cron notifier
-  // app.use("/api/cron", cronRoutes);
+  app.use("/api/fuel", fuelRouter);
+
+  // ✅ NUEVO: Premios AGR (sin proxy)
+  app.use("/api/premios", premiosRouter);
 
   const port = Number(process.env.PORT || 3000);
   app.listen(port, () => {
     console.log(`API escuchando en :${port}`);
+    console.log(`Premios:   http://localhost:${port}/api/premios?year=2026`);
+    console.log(`Refresh:   POST http://localhost:${port}/api/premios/refresh`);
   });
 }
 

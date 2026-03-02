@@ -1,0 +1,209 @@
+{
+  "year": 2026,
+  "stations": [
+    "Bettica",
+    "Monteverde",
+    "Tobago 1"
+  ],
+  "months": [
+    {
+      "month": "ENE",
+      "values": {
+        "Bettica": 62,
+        "Tobago 1": 291,
+        "Monteverde": 30
+      }
+    },
+    {
+      "month": "FEB",
+      "values": {
+        "Tobago 1": 218,
+        "Monteverde": 21,
+        "Bettica": 55
+      }
+    },
+    {
+      "month": "MAR",
+      "values": {
+        "Monteverde": 8,
+        "Tobago 1": 32,
+        "Bettica": 1
+      }
+    },
+    {
+      "month": "ABR",
+      "values": {}
+    },
+    {
+      "month": "MAY",
+      "values": {}
+    },
+    {
+      "month": "JUN",
+      "values": {}
+    },
+    {
+      "month": "JUL",
+      "values": {}
+    },
+    {
+      "month": "AGO",
+      "values": {}
+    },
+    {
+      "month": "SEP",
+      "values": {}
+    },
+    {
+      "month": "OCT",
+      "values": {}
+    },
+    {
+      "month": "NOV",
+      "values": {}
+    },
+    {
+      "month": "DIC",
+      "values": {}
+    }
+  ],
+  "monthsPoints": [
+    {
+      "month": "ENE",
+      "values": {
+        "Bettica": 21229,
+        "Tobago 1": 80450,
+        "Monteverde": 7840
+      }
+    },
+    {
+      "month": "FEB",
+      "values": {
+        "Tobago 1": 57119,
+        "Monteverde": 5335,
+        "Bettica": 18089
+      }
+    },
+    {
+      "month": "MAR",
+      "values": {
+        "Monteverde": 2030,
+        "Tobago 1": 7085,
+        "Bettica": 565
+      }
+    },
+    {
+      "month": "ABR",
+      "values": {}
+    },
+    {
+      "month": "MAY",
+      "values": {}
+    },
+    {
+      "month": "JUN",
+      "values": {}
+    },
+    {
+      "month": "JUL",
+      "values": {}
+    },
+    {
+      "month": "AGO",
+      "values": {}
+    },
+    {
+      "month": "SEP",
+      "values": {}
+    },
+    {
+      "month": "OCT",
+      "values": {}
+    },
+    {
+      "month": "NOV",
+      "values": {}
+    },
+    {
+      "month": "DIC",
+      "values": {}
+    }
+  ],
+  "monthsMoney": [
+    {
+      "month": "ENE",
+      "values": {
+        "Bettica": 508859.13,
+        "Tobago 1": 1928386.4999999995,
+        "Monteverde": 187924.79999999996
+      }
+    },
+    {
+      "month": "FEB",
+      "values": {
+        "Tobago 1": 1369142.4300000002,
+        "Monteverde": 127879.95000000003,
+        "Bettica": 433593.33
+      }
+    },
+    {
+      "month": "MAR",
+      "values": {
+        "Monteverde": 48659.1,
+        "Tobago 1": 169827.44999999995,
+        "Bettica": 13543.05
+      }
+    },
+    {
+      "month": "ABR",
+      "values": {}
+    },
+    {
+      "month": "MAY",
+      "values": {}
+    },
+    {
+      "month": "JUN",
+      "values": {}
+    },
+    {
+      "month": "JUL",
+      "values": {}
+    },
+    {
+      "month": "AGO",
+      "values": {}
+    },
+    {
+      "month": "SEP",
+      "values": {}
+    },
+    {
+      "month": "OCT",
+      "values": {}
+    },
+    {
+      "month": "NOV",
+      "values": {}
+    },
+    {
+      "month": "DIC",
+      "values": {}
+    }
+  ],
+  "meta": {
+    "pesosPerPoint": 23.97,
+    "pointUnit": "m³ GNC",
+    "itemsLastUpdated": "2026-03-02T19:17:25.424Z",
+    "itemsCount": 129,
+    "itemsUrl": "https://adm.agrcloud.com.ar/filtered/items/2",
+    "matchStats": {
+      "matchedByCode": 0,
+      "matchedByName": 699,
+      "unmatched": 0
+    },
+    "unknownRewardsSample": []
+  },
+  "source": "agrcloud-html",
+  "lastUpdated": "2026-03-02T19:17:39.827Z"
+}
