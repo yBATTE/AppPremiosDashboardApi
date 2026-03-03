@@ -34,11 +34,6 @@ function parseNumberAR(s: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function safeNum(v: unknown) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
 function extractRewardCode(text: unknown) {
   const m = /\((\d+)\)/.exec(String(text || ""));
   return m ? Number(m[1]) : null;
@@ -78,6 +73,29 @@ const PREMIOS_IGNORE_CODES = new Set<number>(
   PREMIOS_IGNORE.map((s) => (/\((\d+)\)/.exec(s)?.[1] ? Number(/\((\d+)\)/.exec(s)![1]) : null)).filter(Boolean) as number[],
 );
 
+function isServerlessReadonlyFS() {
+  // Vercel / AWS Lambda suelen tener /var/task readonly y /tmp writable
+  return !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME || !!process.env.LAMBDA_TASK_ROOT || !!process.env.NOW_REGION;
+}
+
+function resolveDataDir() {
+  const forced = String(process.env.PREMIOS_DATA_DIR || "").trim();
+  if (forced) return forced;
+
+  if (isServerlessReadonlyFS()) {
+    // ✅ writable en serverless
+    return path.join("/tmp", "premios-cache");
+  }
+
+  // ✅ local / server normal
+  return path.join(process.cwd(), "data");
+}
+
+function isReadonlyFsError(err: any) {
+  const code = String(err?.code || "");
+  return code === "EROFS" || code === "EPERM" || code === "EACCES";
+}
+
 export class PremiosService {
   private AGR_BASE = "https://adm.agrcloud.com.ar";
   private AGR_SERVICE_ID = Number(process.env.AGR_SERVICE_ID || 2);
@@ -90,7 +108,8 @@ export class PremiosService {
 
   private AGR_PAGE_SIZE = Number(process.env.AGR_PAGE_SIZE || 20);
 
-  private DATA_DIR = (process.env.PREMIOS_DATA_DIR || path.join(process.cwd(), "data")).trim();
+  private DATA_DIR: string;
+  private diskCacheEnabled: boolean;
 
   private PREMIOS_STATIONS_ORDER = (process.env.PREMIOS_STATIONS || "")
     .split(",")
@@ -103,6 +122,12 @@ export class PremiosService {
   private agrLoginInFlight: Promise<boolean> | null = null;
 
   constructor() {
+    this.DATA_DIR = resolveDataDir();
+
+    // Podés desactivar cache a disco manualmente
+    const diskFlag = String(process.env.PREMIOS_DISK_CACHE ?? "1").trim();
+    this.diskCacheEnabled = diskFlag !== "0";
+
     this.agrHttp = axios.create({
       baseURL: this.AGR_BASE,
       timeout: 30_000,
@@ -148,8 +173,18 @@ export class PremiosService {
   // Cache helpers
   // ---------------------------
   private async ensureDir() {
-    if (!fs.existsSync(this.DATA_DIR)) {
+    if (!this.diskCacheEnabled) return;
+
+    try {
       await fsp.mkdir(this.DATA_DIR, { recursive: true });
+    } catch (err: any) {
+      // ✅ si el FS no deja escribir, desactivamos cache para no romper el endpoint
+      if (isReadonlyFsError(err)) {
+        this.diskCacheEnabled = false;
+        console.warn(`[premios] Disk cache disabled (readonly fs). DATA_DIR=${this.DATA_DIR} code=${err?.code || "?"}`);
+        return;
+      }
+      throw err;
     }
   }
 
@@ -158,6 +193,7 @@ export class PremiosService {
   }
 
   private async readCache(year: number): Promise<PremiosPayload | null> {
+    if (!this.diskCacheEnabled) return null;
     try {
       const raw = await fsp.readFile(this.cachePath(year), "utf8");
       return JSON.parse(raw);
@@ -167,8 +203,19 @@ export class PremiosService {
   }
 
   private async writeCache(year: number, data: PremiosPayload) {
-    await this.ensureDir();
-    await fsp.writeFile(this.cachePath(year), JSON.stringify(data, null, 2), "utf8");
+    if (!this.diskCacheEnabled) return;
+    try {
+      await this.ensureDir();
+      if (!this.diskCacheEnabled) return;
+      await fsp.writeFile(this.cachePath(year), JSON.stringify(data, null, 2), "utf8");
+    } catch (err: any) {
+      if (isReadonlyFsError(err)) {
+        this.diskCacheEnabled = false;
+        console.warn(`[premios] Disk cache write skipped (readonly fs). code=${err?.code || "?"}`);
+        return;
+      }
+      throw err;
+    }
   }
 
   private itemsCachePath() {
@@ -176,6 +223,7 @@ export class PremiosService {
   }
 
   private async readItemsCache(): Promise<any | null> {
+    if (!this.diskCacheEnabled) return null;
     try {
       const raw = await fsp.readFile(this.itemsCachePath(), "utf8");
       return JSON.parse(raw);
@@ -185,8 +233,19 @@ export class PremiosService {
   }
 
   private async writeItemsCache(data: any) {
-    await this.ensureDir();
-    await fsp.writeFile(this.itemsCachePath(), JSON.stringify(data, null, 2), "utf8");
+    if (!this.diskCacheEnabled) return;
+    try {
+      await this.ensureDir();
+      if (!this.diskCacheEnabled) return;
+      await fsp.writeFile(this.itemsCachePath(), JSON.stringify(data, null, 2), "utf8");
+    } catch (err: any) {
+      if (isReadonlyFsError(err)) {
+        this.diskCacheEnabled = false;
+        console.warn(`[premios] Disk cache items write skipped (readonly fs). code=${err?.code || "?"}`);
+        return;
+      }
+      throw err;
+    }
   }
 
   // ---------------------------
@@ -229,7 +288,6 @@ export class PremiosService {
     const action = form.attr("action") || "/Account/SignIn";
 
     const fields: Record<string, string> = {};
-    // ✅ TIPADO: evita TS7006
     form.find("input").each((_i: number, el: any) => {
       const key = $(el).attr("name") || $(el).attr("id");
       if (!key) return;
@@ -348,7 +406,6 @@ export class PremiosService {
 
     if (!table.length) return { rows, totalItems: null as number | null };
 
-    // ✅ TIPADO: evita TS7006
     table.find("tbody tr").each((_i: number, tr: any) => {
       const tds = $(tr).find("td");
       if (tds.length < 8) return;
@@ -445,7 +502,6 @@ export class PremiosService {
 
     let table: any = null;
 
-    // ✅ TIPADO: evita TS7006
     $("table").each((_i: number, t: any) => {
       const head = $(t).find("thead").text();
       if (norm(head).includes("PUNTO")) {
@@ -458,7 +514,6 @@ export class PremiosService {
     if (!table.length) return { byName: {} as Record<string, number>, byCode: {} as Record<string, number>, totalItems: null as number | null };
 
     const headers: string[] = [];
-    // ✅ TIPADO: evita TS7006
     table.find("thead th").each((_i: number, th: any) => headers.push(norm($(th).text())));
 
     const idxPoints = headers.findIndex((h) => h.includes("PUNTO"));
@@ -468,7 +523,6 @@ export class PremiosService {
     const byName: Record<string, number> = {};
     const byCode: Record<string, number> = {};
 
-    // ✅ TIPADO: evita TS7006
     table.find("tbody tr").each((_i: number, tr: any) => {
       const tds = $(tr).find("td");
       if (!tds.length) return;
@@ -722,6 +776,10 @@ export class PremiosService {
         itemsUrl: `${this.AGR_BASE}/filtered/items/${this.AGR_ITEMS_CATEGORY_ID}`,
         matchStats,
         unknownRewardsSample: Array.from(unknownRewards).slice(0, 30),
+        cache: {
+          disk: this.diskCacheEnabled,
+          dataDir: this.DATA_DIR,
+        },
       },
     });
   }
