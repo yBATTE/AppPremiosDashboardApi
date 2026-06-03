@@ -351,168 +351,181 @@ export class PremiosService {
   private async agrDebugFile(name: string, content: any) {
     if (String(process.env.AGR_DEBUG || "0") !== "1") return;
 
-    const debugDir = path.join(process.cwd(), "debug-agr");
-    await fsp.mkdir(debugDir, { recursive: true });
+    try {
+      const isServerless =
+        !!process.env.VERCEL ||
+        !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+        !!process.env.LAMBDA_TASK_ROOT ||
+        !!process.env.NOW_REGION;
 
-    const filePath = path.join(debugDir, name);
+      const debugDir = isServerless
+        ? path.join("/tmp", "debug-agr")
+        : path.join(process.cwd(), "debug-agr");
 
-    await fsp.writeFile(
-      filePath,
-      typeof content === "string" ? content : JSON.stringify(content, null, 2),
-      "utf8"
-    );
+      await fsp.mkdir(debugDir, { recursive: true });
 
-    console.log(`[AGR DEBUG] Guardado: ${filePath}`);
+      const filePath = path.join(debugDir, name);
+
+      await fsp.writeFile(
+        filePath,
+        typeof content === "string" ? content : JSON.stringify(content, null, 2),
+        "utf8"
+      );
+
+      console.log(`[AGR DEBUG] Guardado: ${filePath}`);
+    } catch (err: any) {
+      console.warn("[AGR DEBUG] No se pudo guardar debug:", err?.message || err);
+    }
   }
 
-private async agrLogin(): Promise<boolean> {
-  if (this.agrLoginInFlight) return this.agrLoginInFlight;
+  private async agrLogin(): Promise<boolean> {
+    if (this.agrLoginInFlight) return this.agrLoginInFlight;
 
-  this.agrLoginInFlight = (async () => {
-    if (this.AGR_COOKIE) {
-      await this.seedAgrCookieHeader(this.AGR_COOKIE);
-      return true;
-    }
+    this.agrLoginInFlight = (async () => {
+      if (this.AGR_COOKIE) {
+        await this.seedAgrCookieHeader(this.AGR_COOKIE);
+        return true;
+      }
 
-    if (!this.AGR_USER || !this.AGR_PASS) {
-      throw new Error("Falta AGR_USER/AGR_PASS en .env");
-    }
+      if (!this.AGR_USER || !this.AGR_PASS) {
+        throw new Error("Falta AGR_USER/AGR_PASS en .env");
+      }
 
-    const returnUrl = `/filtered/items/movements/details/service/${this.AGR_SERVICE_ID}`;
-    const loginUrl = `/Account/SignIn?ReturnUrl=${encodeURIComponent(returnUrl)}`;
+      const returnUrl = `/filtered/items/movements/details/service/${this.AGR_SERVICE_ID}`;
+      const loginUrl = `/Account/SignIn?ReturnUrl=${encodeURIComponent(returnUrl)}`;
 
-    const loginPage = await this.agrHttp.get(loginUrl, {
-      headers: {
-        Referer: `${this.AGR_BASE}/`,
-      },
-    });
-
-    await this.agrDebugFile("01-login-page.html", String(loginPage.data || ""));
-
-    if (loginPage.status >= 400) {
-      throw new Error(`GET login AGR falló: ${loginPage.status}`);
-    }
-
-    const { action, fields, userField, passField } = this.parseAgrLoginForm(
-      String(loginPage.data || "")
-    );
-
-    console.log("[AGR LOGIN] action:", action);
-    console.log("[AGR LOGIN] fields:", Object.keys(fields));
-    console.log("[AGR LOGIN] userField:", userField || "(no detectado)");
-    console.log("[AGR LOGIN] passField:", passField || "(no detectado)");
-
-    if (userField) {
-      fields[userField] = this.AGR_USER;
-    } else if ("Username" in fields) {
-      fields.Username = this.AGR_USER;
-    } else if ("UserName" in fields) {
-      fields.UserName = this.AGR_USER;
-    } else if ("Email" in fields) {
-      fields.Email = this.AGR_USER;
-    } else if ("email" in fields) {
-      fields.email = this.AGR_USER;
-    } else {
-      fields.Username = this.AGR_USER;
-    }
-
-    if (passField) {
-      fields[passField] = this.AGR_PASS;
-    } else if ("Password" in fields) {
-      fields.Password = this.AGR_PASS;
-    } else if ("password" in fields) {
-      fields.password = this.AGR_PASS;
-    } else {
-      fields.Password = this.AGR_PASS;
-    }
-
-    if (!("ReturnUrl" in fields) && !("returnUrl" in fields)) {
-      fields.ReturnUrl = returnUrl;
-    }
-
-    const postUrl = action.startsWith("http")
-      ? action
-      : new URL(action, this.AGR_BASE).toString();
-
-    const body = new URLSearchParams(fields).toString();
-
-    const res = await this.agrHttp.post(postUrl, body, {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Origin: this.AGR_BASE,
-        Referer: `${this.AGR_BASE}${loginUrl}`,
-      },
-    });
-
-    await this.agrDebugFile("02-login-post-response.html", String(res.data || ""));
-    await this.agrDebugFile("02-login-post-meta.json", {
-      status: res.status,
-      location: res.headers?.location || null,
-      setCookie: res.headers?.["set-cookie"] || null,
-    });
-
-    console.log("[AGR LOGIN] POST status:", res.status);
-    console.log("[AGR LOGIN] POST location:", res.headers?.location || "(sin location)");
-
-    if (res.status === 302 && res.headers?.location) {
-      const loc = res.headers.location.startsWith("http")
-        ? res.headers.location
-        : new URL(res.headers.location, this.AGR_BASE).toString();
-
-      const redirected = await this.agrHttp.get(loc, {
+      const loginPage = await this.agrHttp.get(loginUrl, {
         headers: {
+          Referer: `${this.AGR_BASE}/`,
+        },
+      });
+
+      await this.agrDebugFile("01-login-page.html", String(loginPage.data || ""));
+
+      if (loginPage.status >= 400) {
+        throw new Error(`GET login AGR falló: ${loginPage.status}`);
+      }
+
+      const { action, fields, userField, passField } = this.parseAgrLoginForm(
+        String(loginPage.data || "")
+      );
+
+      console.log("[AGR LOGIN] action:", action);
+      console.log("[AGR LOGIN] fields:", Object.keys(fields));
+      console.log("[AGR LOGIN] userField:", userField || "(no detectado)");
+      console.log("[AGR LOGIN] passField:", passField || "(no detectado)");
+
+      if (userField) {
+        fields[userField] = this.AGR_USER;
+      } else if ("Username" in fields) {
+        fields.Username = this.AGR_USER;
+      } else if ("UserName" in fields) {
+        fields.UserName = this.AGR_USER;
+      } else if ("Email" in fields) {
+        fields.Email = this.AGR_USER;
+      } else if ("email" in fields) {
+        fields.email = this.AGR_USER;
+      } else {
+        fields.Username = this.AGR_USER;
+      }
+
+      if (passField) {
+        fields[passField] = this.AGR_PASS;
+      } else if ("Password" in fields) {
+        fields.Password = this.AGR_PASS;
+      } else if ("password" in fields) {
+        fields.password = this.AGR_PASS;
+      } else {
+        fields.Password = this.AGR_PASS;
+      }
+
+      if (!("ReturnUrl" in fields) && !("returnUrl" in fields)) {
+        fields.ReturnUrl = returnUrl;
+      }
+
+      const postUrl = action.startsWith("http")
+        ? action
+        : new URL(action, this.AGR_BASE).toString();
+
+      const body = new URLSearchParams(fields).toString();
+
+      const res = await this.agrHttp.post(postUrl, body, {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Origin: this.AGR_BASE,
           Referer: `${this.AGR_BASE}${loginUrl}`,
         },
       });
 
-      await this.agrDebugFile("03-after-redirect.html", String(redirected.data || ""));
-      await this.agrDebugFile("03-after-redirect-meta.json", {
-        status: redirected.status,
-        location: redirected.headers?.location || null,
+      await this.agrDebugFile("02-login-post-response.html", String(res.data || ""));
+      await this.agrDebugFile("02-login-post-meta.json", {
+        status: res.status,
+        location: res.headers?.location || null,
+        setCookie: res.headers?.["set-cookie"] || null,
       });
 
-      console.log("[AGR LOGIN] Redirect status:", redirected.status);
-      console.log("[AGR LOGIN] Redirect location:", redirected.headers?.location || "(sin location)");
-    }
+      console.log("[AGR LOGIN] POST status:", res.status);
+      console.log("[AGR LOGIN] POST location:", res.headers?.location || "(sin location)");
 
-    const test = await this.agrHttp.get(
-      `/filtered/items/movements/details/service/${this.AGR_SERVICE_ID}`,
-      {
-        params: {
-          startDate: "2026-02-01",
-          endDate: "2026-02-01T23:59:59",
-          orderBy: "date-desc",
-          page: 1,
-          pageSize: 1,
-        },
-        headers: {
-          Referer: `${this.AGR_BASE}/filtered/items/movements/details/service/${this.AGR_SERVICE_ID}`,
-        },
+      if (res.status === 302 && res.headers?.location) {
+        const loc = res.headers.location.startsWith("http")
+          ? res.headers.location
+          : new URL(res.headers.location, this.AGR_BASE).toString();
+
+        const redirected = await this.agrHttp.get(loc, {
+          headers: {
+            Referer: `${this.AGR_BASE}${loginUrl}`,
+          },
+        });
+
+        await this.agrDebugFile("03-after-redirect.html", String(redirected.data || ""));
+        await this.agrDebugFile("03-after-redirect-meta.json", {
+          status: redirected.status,
+          location: redirected.headers?.location || null,
+        });
+
+        console.log("[AGR LOGIN] Redirect status:", redirected.status);
+        console.log("[AGR LOGIN] Redirect location:", redirected.headers?.location || "(sin location)");
       }
-    );
 
-    await this.agrDebugFile("04-test-response.html", String(test.data || ""));
-    await this.agrDebugFile("04-test-meta.json", {
-      status: test.status,
-      location: test.headers?.location || null,
-    });
+      const test = await this.agrHttp.get(
+        `/filtered/items/movements/details/service/${this.AGR_SERVICE_ID}`,
+        {
+          params: {
+            startDate: "2026-02-01",
+            endDate: "2026-02-01T23:59:59",
+            orderBy: "date-desc",
+            page: 1,
+            pageSize: 1,
+          },
+          headers: {
+            Referer: `${this.AGR_BASE}/filtered/items/movements/details/service/${this.AGR_SERVICE_ID}`,
+          },
+        }
+      );
 
-    console.log("[AGR LOGIN] Test status:", test.status);
-    console.log("[AGR LOGIN] Test location:", test.headers?.location || "(sin location)");
+      await this.agrDebugFile("04-test-response.html", String(test.data || ""));
+      await this.agrDebugFile("04-test-meta.json", {
+        status: test.status,
+        location: test.headers?.location || null,
+      });
 
-    if (this.agrIsRedirectToLogin(test) || this.agrLooksLikeLogin(test.data)) {
-      throw new Error("Login AGR falló: sigue devolviendo SignIn.");
+      console.log("[AGR LOGIN] Test status:", test.status);
+      console.log("[AGR LOGIN] Test location:", test.headers?.location || "(sin location)");
+
+      if (this.agrIsRedirectToLogin(test) || this.agrLooksLikeLogin(test.data)) {
+        throw new Error("Login AGR falló: sigue devolviendo SignIn.");
+      }
+
+      return true;
+    })();
+
+    try {
+      return await this.agrLoginInFlight;
+    } finally {
+      this.agrLoginInFlight = null;
     }
-
-    return true;
-  })();
-
-  try {
-    return await this.agrLoginInFlight;
-  } finally {
-    this.agrLoginInFlight = null;
   }
-}
 
   // ---------------------------
   // Movements (canjes)
